@@ -4,108 +4,120 @@ EXTENDS Integers, FiniteSets, Sequences
 
 CONSTANT N
 
-VARIABLES states, rightChopsticks, leftChopsticks, messages
+VARIABLES states, rightChopsticks, leftChopsticks, messagesGoingLeft, messagesGoingRight
+
+SeqToSet(seq) == {seq[i]: i \in DOMAIN seq}
+
+IsInSeq(seq, e) == e \in SeqToSet(seq)
 
 TypeOK ==/\ (\A n \in 1..N:
            /\ states[n] \in {"thinking", "waitingForRight", "waitingForLeft", "eating"}
            /\ rightChopsticks[n] \in {"notHolding", "holding"}
            /\ leftChopsticks[n] \in {"notHolding", "holding"})
-         /\ (\A m \in messages:
-           /\ m.to \in 1..N
-           /\ m.from \in 1..N
-           /\ m.type \in {"rightChopstickRequest", "leftChopstickRequest", "rightChopstickReplyAccept",
-                      "leftChopstickReplyAccept", "rightChopstickReplyDeny", "leftChopstickReplyDeny"})
+           /\ (\A n \in 1..N:
+             LET asSet == SeqToSet(messagesGoingLeft[n]) IN
+               \A m \in asSet:
+                m \in {"leftChopstickRequest", "rightChopstickReplyAccept", "rightChopstickReplyDeny"})
+           /\ (\A n \in 1..N:
+             LET asSet == SeqToSet(messagesGoingRight[n]) IN
+               \A m \in asSet:
+                m \in {"rightChopstickRequest", "leftChopstickReplyAccept", "leftChopstickReplyDeny"})
 
 Init == /\ states = [n \in 1..N |-> "thinking"]
         /\ rightChopsticks = [n \in 1..N |-> "notHolding"]
         /\ leftChopsticks = [n \in 1..N |-> "notHolding"]
-        /\ messages = {}
+        /\ messagesGoingLeft = [n \in 1..N |-> << >>]
+        /\ messagesGoingRight = [n \in 1..N |-> << >>]
 
 rightIndex(n) == IF n = N THEN 1 ELSE n+1
 leftIndex(n) == IF n = 1 THEN N ELSE n-1
 
-tryToEat(n) == LET m == [ from |-> n, to |-> leftIndex(n), type |-> "leftChopstickRequest" ] IN
-               /\ states[n] = "thinking"
-               /\ messages' = messages \union {m}
-               /\ states' = [states EXCEPT ![n] = "waitingForLeft"]
-               /\ UNCHANGED << rightChopsticks, leftChopsticks >>
+tryToEat(n) == 
+  /\ ~IsInSeq(messagesGoingLeft[leftIndex(n)], "leftChopstickRequest")
+  /\ states[n] = "thinking"
+  /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![leftIndex(n)] = Append(messagesGoingLeft[leftIndex(n)], "leftChopstickRequest")]
+  /\ states' = [states EXCEPT ![n] = "waitingForLeft"]
+  /\ UNCHANGED << rightChopsticks, leftChopsticks, messagesGoingRight >>
+
+IsFirst(seq, e) ==
+  /\ Len(seq) > 0
+  /\ Head(seq) = e
 
 acceptRightChopstickRequest(n) == 
-  LET req == [ from |-> leftIndex(n), to |-> n, type |-> "rightChopstickRequest" ] 
-      resp == [ from |-> n, to |-> leftIndex(n), type |-> "rightChopstickReplyAccept" ] IN
-  /\ req \in messages
+  /\ ~IsInSeq(messagesGoingLeft[leftIndex(n)], "rightChopstickReplyAccept")
+  /\ IsFirst(messagesGoingRight[n], "rightChopstickRequest")
   /\ leftChopsticks[n] = "notHolding"
   /\ states[n] /= "waitingForLeft"
-  /\ messages' = (messages \union {resp}) \ {req}
+  /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![n] = Tail(messagesGoingRight[n])]
+  /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![leftIndex(n)] = Append(messagesGoingLeft[leftIndex(n)], "rightChopstickReplyAccept")]
   /\ UNCHANGED << states, rightChopsticks, leftChopsticks >>
                                   
 denyRightChopstickRequest(n) == 
   LET req == [ from |-> leftIndex(n), to |-> n, type |-> "rightChopstickRequest" ] 
       resp == [ from |-> n, to |-> leftIndex(n), type |-> "rightChopstickReplyDeny" ] IN
-  /\ req \in messages
+  /\ ~IsInSeq(messagesGoingLeft[leftIndex(n)], "rightChopstickReplyDeny")
+  /\ IsFirst(messagesGoingRight[n], "rightChopstickRequest")
   /\ (leftChopsticks[n] = "holding" \/ states[n] = "waitingForLeft")
-  /\ messages' = (messages \union {resp}) \ {req}
+  /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![n] = Tail(messagesGoingRight[n])]
+  /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![leftIndex(n)] = Append(messagesGoingLeft[leftIndex(n)], "rightChopstickReplyDeny")]
   /\ UNCHANGED << states, rightChopsticks, leftChopsticks >>
-       
-acceptLeftChopstickRequest(n) == 
-  LET req == [ from |-> rightIndex(n), to |-> n, type |-> "leftChopstickRequest" ] 
-      resp == [ from |-> n, to |-> rightIndex(n), type |-> "leftChopstickReplyAccept" ] IN
-  /\ req \in messages
+
+acceptLeftChopstickRequest(n) ==
+  /\ ~IsInSeq(messagesGoingRight[rightIndex(n)], "leftChopstickReplyAccept")
+  /\ IsFirst(messagesGoingLeft[n], "leftChopstickRequest")
   /\ rightChopsticks[n] = "notHolding"
   /\ states[n] /= "waitingForRight"
-  /\ messages' = (messages \union {resp}) \ {req}
+  /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![n] = Tail(messagesGoingLeft[n])]
+  /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![rightIndex(n)] = Append(messagesGoingRight[rightIndex(n)], "leftChopstickReplyAccept")]
   /\ UNCHANGED << states, rightChopsticks, leftChopsticks >>
                                   
-denyLeftChopstickRequest(n) == 
-  LET req == [ from |-> rightIndex(n), to |-> n, type |-> "leftChopstickRequest" ] 
-      resp == [ from |-> n, to |-> rightIndex(n), type |-> "leftChopstickReplyDeny" ] IN
-  /\ req \in messages
+denyLeftChopstickRequest(n) ==
+  /\ ~IsInSeq(messagesGoingRight[rightIndex(n)], "leftChopstickReplyDeny") 
+  /\ IsFirst(messagesGoingLeft[n], "leftChopstickRequest")
   /\ (rightChopsticks[n] = "holding" \/ states[n] = "waitingForRight")
-  /\ messages' = (messages \union {resp}) \ {req}
+  /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![n] = Tail(messagesGoingLeft[n])]
+  /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![rightIndex(n)] = Append(messagesGoingRight[rightIndex(n)], "leftChopstickReplyDeny")]
   /\ UNCHANGED << states, rightChopsticks, leftChopsticks >>
 
 handleRightChopstickAccept(n) ==
-  LET reply ==  [ from |-> rightIndex(n), to |-> n, type |-> "rightChopstickReplyAccept" ] IN
-  /\ reply \in messages
+  /\ IsFirst(messagesGoingLeft[n], "rightChopstickReplyAccept")
   /\ states[n] = "waitingForRight"
   /\ rightChopsticks' = [rightChopsticks EXCEPT ![n] = "holding"]
   /\ states' = [states EXCEPT ![n] = "eating"]
-  /\ messages' = messages \ {reply}
-  /\ UNCHANGED leftChopsticks
+  /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![n] = Tail(messagesGoingLeft[n])]
+  /\ UNCHANGED << leftChopsticks, messagesGoingRight >>
 
 handleRightChopstickDeny(n) ==
-  LET reply ==  [ from |-> rightIndex(n), to |-> n, type |-> "rightChopstickReplyDeny" ] IN
-  /\ reply \in messages
+  /\ IsFirst(messagesGoingLeft[n], "rightChopstickReplyDeny")
   /\ states[n] = "waitingForRight"
   /\ states' = [states EXCEPT ![n] = "thinking"]
   /\ leftChopsticks' = [leftChopsticks EXCEPT ![n] = "notHolding"]
-  /\ messages' = messages \ {reply}
-  /\ UNCHANGED rightChopsticks
+  /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![n] = Tail(messagesGoingLeft[n])]
+  /\ UNCHANGED << rightChopsticks, messagesGoingRight >>
 
 handleLeftChopstickAccept(n) ==
-  LET reply ==  [ from |-> leftIndex(n), to |-> n, type |-> "leftChopstickReplyAccept" ]
-      req == [ from |-> n, to |-> rightIndex(n), type |-> "rightChopstickRequest" ] IN
-  /\ reply \in messages
+  /\ IsFirst(messagesGoingRight[n], "leftChopstickReplyAccept")
+  /\ ~IsInSeq(messagesGoingRight[rightIndex(n)], "rightChopstickRequest")
   /\ states[n] = "waitingForLeft"
   /\ leftChopsticks' = [leftChopsticks EXCEPT ![n] = "holding"]
   /\ states' = [states EXCEPT ![n] = "waitingForRight"]
-  /\ messages' = (messages \union {req}) \ {reply}
-  /\ UNCHANGED rightChopsticks
+  /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![n] = Tail(messagesGoingRight[n]),
+                                                      ![rightIndex(n)] = Append(messagesGoingRight[rightIndex(n)], "rightChopstickRequest")]
+  /\ UNCHANGED << rightChopsticks, messagesGoingLeft >>
 
 handleLeftChopstickDeny(n) ==
-  LET reply ==  [ from |-> leftIndex(n), to |-> n, type |-> "leftChopstickReplyDeny" ] IN
-  /\ reply \in messages
+  /\ IsFirst(messagesGoingRight[n], "leftChopstickReplyDeny")
   /\ states[n] = "waitingForLeft"
   /\ states' = [states EXCEPT ![n] = "thinking"]
-  /\ messages' = messages \ {reply}
-  /\ UNCHANGED << rightChopsticks, leftChopsticks >>
+  /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![n] = Tail(messagesGoingRight[n])]
+  /\ UNCHANGED << rightChopsticks, leftChopsticks, messagesGoingLeft >>
 
 stopEating(n) == 
 \*  /\ states[n] = "eating"
   /\ rightChopsticks' = [rightChopsticks EXCEPT ![n] = "notHolding"]
   /\ leftChopsticks' = [leftChopsticks EXCEPT ![n] = "notHolding"]
   /\ states' = [states EXCEPT ![n] = "thinking"]
-  /\ UNCHANGED messages
+  /\ UNCHANGED << messagesGoingLeft, messagesGoingRight >>
 
 Next == \/ \E n \in 1..N:
             \/ tryToEat(n)
@@ -119,7 +131,10 @@ Next == \/ \E n \in 1..N:
             \/ handleLeftChopstickDeny(n)
             \/ stopEating(n)
 
-Stop == Len(SelectSeq(states, LAMBDA x: x = "eating")) = 3
+Stop == 
+\*\E n \in 1..N:
+\*            Len(messagesGoingRight[n]) = 4
+Len(SelectSeq(states, LAMBDA x: x = "eating")) = 3
 
 AdjacentPeopleEating == \E n \in 1..N:
                             /\ states[n] = "eating"
@@ -131,5 +146,5 @@ TwoPeopleHoldingChopstick == \E n \in 1..N:
 
 =============================================================================
 \* Modification History
-\* Last modified Thu May 12 22:41:48 EDT 2022 by luke
+\* Last modified Fri May 13 11:58:17 EDT 2022 by luke
 \* Created Thu May 12 22:41:30 EDT 2022 by luke
