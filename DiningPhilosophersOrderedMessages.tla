@@ -8,7 +8,9 @@ VARIABLES states, rightChopsticks, leftChopsticks, messagesGoingLeft, messagesGo
 
 SeqToSet(seq) == {seq[i]: i \in DOMAIN seq}
 
-IsInSeq(seq, e) == e \in SeqToSet(seq)
+\*IsInSeq(seq, e) == e \in SeqToSet(seq)
+
+MessageBufferFull(seq) == Len(seq) = 3
 
 TypeOK ==/\ (\A n \in 1..N:
            /\ states[n] \in {"thinking", "waitingForRight", "waitingForLeft", "eating"}
@@ -33,7 +35,7 @@ rightIndex(n) == IF n = N THEN 1 ELSE n+1
 leftIndex(n) == IF n = 1 THEN N ELSE n-1
 
 tryToEat(n) == 
-  /\ ~IsInSeq(messagesGoingLeft[leftIndex(n)], "leftChopstickRequest")
+  /\ ~MessageBufferFull(messagesGoingLeft[leftIndex(n)])
   /\ states[n] = "thinking"
   /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![leftIndex(n)] = Append(messagesGoingLeft[leftIndex(n)], "leftChopstickRequest")]
   /\ states' = [states EXCEPT ![n] = "waitingForLeft"]
@@ -44,7 +46,7 @@ IsFirst(seq, e) ==
   /\ Head(seq) = e
 
 acceptRightChopstickRequest(n) == 
-  /\ ~IsInSeq(messagesGoingLeft[leftIndex(n)], "rightChopstickReplyAccept")
+  /\ ~MessageBufferFull(messagesGoingLeft[leftIndex(n)])
   /\ IsFirst(messagesGoingRight[n], "rightChopstickRequest")
   /\ leftChopsticks[n] = "notHolding"
   /\ states[n] /= "waitingForLeft"
@@ -53,9 +55,7 @@ acceptRightChopstickRequest(n) ==
   /\ UNCHANGED << states, rightChopsticks, leftChopsticks >>
                                   
 denyRightChopstickRequest(n) == 
-  LET req == [ from |-> leftIndex(n), to |-> n, type |-> "rightChopstickRequest" ] 
-      resp == [ from |-> n, to |-> leftIndex(n), type |-> "rightChopstickReplyDeny" ] IN
-  /\ ~IsInSeq(messagesGoingLeft[leftIndex(n)], "rightChopstickReplyDeny")
+  /\ ~MessageBufferFull(messagesGoingLeft[leftIndex(n)])
   /\ IsFirst(messagesGoingRight[n], "rightChopstickRequest")
   /\ (leftChopsticks[n] = "holding" \/ states[n] = "waitingForLeft")
   /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![n] = Tail(messagesGoingRight[n])]
@@ -63,7 +63,7 @@ denyRightChopstickRequest(n) ==
   /\ UNCHANGED << states, rightChopsticks, leftChopsticks >>
 
 acceptLeftChopstickRequest(n) ==
-  /\ ~IsInSeq(messagesGoingRight[rightIndex(n)], "leftChopstickReplyAccept")
+  /\ ~MessageBufferFull(messagesGoingRight[rightIndex(n)])
   /\ IsFirst(messagesGoingLeft[n], "leftChopstickRequest")
   /\ rightChopsticks[n] = "notHolding"
   /\ states[n] /= "waitingForRight"
@@ -72,7 +72,7 @@ acceptLeftChopstickRequest(n) ==
   /\ UNCHANGED << states, rightChopsticks, leftChopsticks >>
                                   
 denyLeftChopstickRequest(n) ==
-  /\ ~IsInSeq(messagesGoingRight[rightIndex(n)], "leftChopstickReplyDeny") 
+  /\ ~MessageBufferFull(messagesGoingRight[rightIndex(n)])
   /\ IsFirst(messagesGoingLeft[n], "leftChopstickRequest")
   /\ (rightChopsticks[n] = "holding" \/ states[n] = "waitingForRight")
   /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![n] = Tail(messagesGoingLeft[n])]
@@ -97,7 +97,7 @@ handleRightChopstickDeny(n) ==
 
 handleLeftChopstickAccept(n) ==
   /\ IsFirst(messagesGoingRight[n], "leftChopstickReplyAccept")
-  /\ ~IsInSeq(messagesGoingRight[rightIndex(n)], "rightChopstickRequest")
+  /\ ~MessageBufferFull(messagesGoingRight[rightIndex(n)])
   /\ states[n] = "waitingForLeft"
   /\ leftChopsticks' = [leftChopsticks EXCEPT ![n] = "holding"]
   /\ states' = [states EXCEPT ![n] = "waitingForRight"]
@@ -146,5 +146,5 @@ TwoPeopleHoldingChopstick == \E n \in 1..N:
 
 =============================================================================
 \* Modification History
-\* Last modified Fri May 13 11:58:17 EDT 2022 by luke
+\* Last modified Fri May 13 12:07:04 EDT 2022 by luke
 \* Created Thu May 12 22:41:30 EDT 2022 by luke
