@@ -6,6 +6,8 @@ CONSTANT N
 
 VARIABLES states, rightChopsticks, leftChopsticks, messagesGoingLeft, messagesGoingRight
 
+vars == << states, rightChopsticks, leftChopsticks, messagesGoingLeft, messagesGoingRight >>
+
 SeqToSet(seq) == {seq[i]: i \in DOMAIN seq}
 
 IsInSeq(seq, e) == e \in SeqToSet(seq)
@@ -95,6 +97,12 @@ handleRightChopstickDeny(n) ==
   /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![n] = Tail(messagesGoingLeft[n])]
   /\ UNCHANGED << rightChopsticks, messagesGoingRight >>
 
+ignoreRightChopstickReply(n) ==
+  /\ (IsFirst(messagesGoingLeft[n], "rightChopstickReplyAccept") \/ IsFirst(messagesGoingLeft[n], "rightChopstickReplyDeny"))
+  /\ states[n] /= "waitingForRight"
+  /\ messagesGoingLeft' = [messagesGoingLeft EXCEPT ![n] = Tail(messagesGoingLeft[n])]
+  /\ UNCHANGED << rightChopsticks, leftChopsticks, messagesGoingRight, states >>
+
 handleLeftChopstickAccept(n) ==
   /\ IsFirst(messagesGoingRight[n], "leftChopstickReplyAccept")
   /\ ~IsInSeq(messagesGoingRight[rightIndex(n)], "rightChopstickRequest")
@@ -112,6 +120,12 @@ handleLeftChopstickDeny(n) ==
   /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![n] = Tail(messagesGoingRight[n])]
   /\ UNCHANGED << rightChopsticks, leftChopsticks, messagesGoingLeft >>
 
+ignoreLeftChopstickReply(n) ==
+  /\ (IsFirst(messagesGoingRight[n], "leftChopstickReplyAccept") \/ IsFirst(messagesGoingRight[n], "leftChopstickReplyDeny"))
+  /\ states[n] /= "waitingForLeft"
+  /\ messagesGoingRight' = [messagesGoingRight EXCEPT ![n] = Tail(messagesGoingRight[n])]
+  /\ UNCHANGED << rightChopsticks, leftChopsticks, messagesGoingLeft, states >>
+
 stopEating(n) == 
 \*  /\ states[n] = "eating"
   /\ rightChopsticks' = [rightChopsticks EXCEPT ![n] = "notHolding"]
@@ -127,14 +141,20 @@ Next == \/ \E n \in 1..N:
             \/ denyLeftChopstickRequest(n)
             \/ handleRightChopstickAccept(n)
             \/ handleRightChopstickDeny(n)
+            \/ ignoreRightChopstickReply(n)
             \/ handleLeftChopstickAccept(n)
             \/ handleLeftChopstickDeny(n)
+            \/ ignoreLeftChopstickReply(n)
             \/ stopEating(n)
 
 Stop == 
 \*\E n \in 1..N:
 \*            Len(messagesGoingRight[n]) = 4
 Len(SelectSeq(states, LAMBDA x: x = "eating")) = 3
+
+EveryoneEventuallyEats ==
+  \A n \in 1..N:
+    states[n] = "eating" ~> states[rightIndex(n)] = "eating"
 
 AdjacentPeopleEating == \E n \in 1..N:
                             /\ states[n] = "eating"
@@ -144,7 +164,23 @@ TwoPeopleHoldingChopstick == \E n \in 1..N:
                                 /\ rightChopsticks[n] = "holding"
                                 /\ leftChopsticks[rightIndex(n)] = "holding"
 
+Spec == /\ Init 
+        /\ [][Next]_vars
+        /\ (\A n \in 1..N:
+           /\ WF_vars(tryToEat(n))
+           /\ SF_vars(acceptRightChopstickRequest(n))
+           /\ WF_vars(denyRightChopstickRequest(n))
+           /\ WF_vars(acceptLeftChopstickRequest(n))
+           /\ WF_vars(denyLeftChopstickRequest(n))
+           /\ WF_vars(handleRightChopstickAccept(n))
+           /\ WF_vars(handleRightChopstickDeny(n))
+           /\ WF_vars(ignoreRightChopstickReply(n))
+           /\ WF_vars(handleLeftChopstickAccept(n))
+           /\ WF_vars(handleLeftChopstickDeny(n))
+           /\ WF_vars(ignoreLeftChopstickReply(n))
+           /\ WF_vars(stopEating(n)))
+
 =============================================================================
 \* Modification History
-\* Last modified Fri May 13 11:58:17 EDT 2022 by luke
+\* Last modified Fri May 13 12:54:22 EDT 2022 by luke
 \* Created Thu May 12 22:41:30 EDT 2022 by luke
